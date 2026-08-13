@@ -1,0 +1,25 @@
+services:
+  mariadb:
+    image: mariadb:11.2
+    container_name: fimobook-mariadb
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: ${FIMO_DB_ROOT_PASSWORD:-fimobook-root-local}
+      MARIADB_DATABASE: fimobook
+      MARIADB_USER: fimobook
+      MARIADB_PASSWORD: ${FIMO_DB_PASSWORD:-fimobook-local}
+    volumes:
+      - fimobook-mariadb-data:/var/lib/mysql
+      - ./backend/src/main/resources/db/schema-mariadb.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  fimobook-mariadb-data:
+    name: fimobook-mariadb-data

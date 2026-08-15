@@ -1,467 +1,308 @@
-# Project: 피모북
+# Project: 피모북 (Fimobook)
 
-## Project Overview
+## Mission
 
-피모북은 FC Mobile 유저를 위한 선수 정보 및 스쿼드 관리 서비스다.
+피모북은 FC Mobile 사용자가 선수 카드를 검색하고 상세 정보와 가격을 확인하며,
+스쿼드를 만들고 저장하고 카드별 평가를 남길 수 있는 실제 서비스 지향 프로젝트다.
 
-단순 학습용 데모가 아니라,
-장기적으로 실제 사용자가 사용할 수 있는 서비스로 발전시키는 것을 목표로 한다.
+이 저장소의 목표는 단순한 화면 데모나 일회성 학습 예제가 아니라 다음을 만족하는
+배포 가능한 최종 프로젝트를 만드는 것이다.
 
-현재는 Vue + Spring Boot + MariaDB 기반의 단일 애플리케이션으로 개발한다.
+- 신뢰할 수 있는 FC Mobile 카드 데이터 수집 및 갱신
+- 빠른 선수 검색과 상세 조회
+- 사용자 계정, 리뷰, 스쿼드 저장
+- 모바일 앱 배포가 가능한 안정적인 REST API
+- 운영 환경에서 관찰하고 복구할 수 있는 단순한 구조
 
-이 프로젝트는 동시에 개발 학습용 프로젝트이기도 하므로,
-기능이 실제로 동작하는 것과 전체 데이터 흐름을 이해할 수 있는 구조를 중요하게 생각한다.
+기능을 구현하는 과정 자체도 학습 목적이므로, 동작만 하는 코드보다 데이터 흐름과
+설계 이유를 이해하기 쉬운 코드를 선호한다.
 
-## Core Product Goals
+## Product Direction
 
-피모북의 핵심 기능은 다음과 같다.
+최종 사용자 클라이언트의 우선순위는 모바일 앱이다.
 
-1. FC Mobile 선수 검색
-2. 선수 카드별 상세 정보 조회
-3. 스쿼드 빌더
-4. 선수 카드별 평가 및 한줄평
-5. 사용자가 만든 스쿼드 저장
-6. 진화 시뮬레이터
-7. 사용자 계정 및 로그인
-8. 이후 커뮤니티 기능 확장
-9. 필요할 경우 AI 기반 기능 추가
+- 목표 모바일 스택: React Native + Expo + TypeScript
+- 현재 Vue 앱: 기존 기능 확인과 API 호환 검증을 위한 웹 클라이언트로 유지
+- Backend: Java + Spring Boot REST API
+- Database: MariaDB
+- Local infrastructure: Docker Compose
 
-## Current Stack
+모바일 앱과 Vue는 MariaDB에 직접 연결하지 않는다. 모든 데이터 접근과 인증은 동일한
+Spring REST API를 통한다. 모바일 구현은 백엔드 데이터/API가 안정된 뒤 시작한다.
 
-### Frontend
+현재 규모에서는 Spring Boot 단일 애플리케이션을 유지한다. MSA, 메시지 브로커,
+Kubernetes 같은 운영 복잡도는 실제 부하나 장애 요구가 생기기 전에는 도입하지 않는다.
 
-- Vue
-- Vue Router
-- JavaScript
+## Domain Keys and Rules
 
-### Backend
+### Player identity
 
-- Java
-- Spring Boot
-- REST API
+- `pid`: 실제 축구선수 고유 ID
+- `cid`: 시즌·클래스·버전별 선수 카드 고유 ID
+- `players.cid`는 Primary Key다.
+- `players.pid`는 일반 Index이며 중복될 수 있다.
+- 같은 `pid`의 서로 다른 `cid`는 서로 다른 카드다.
+- 한 스쿼드에는 같은 `pid`의 카드를 둘 이상 넣을 수 없다.
+- 리뷰와 카드 상세 주소는 `pid`가 아니라 `cid`를 기준으로 한다.
 
-### Database
+### Squad OVR
 
-- MariaDB
+공식 계산식이 확인되기 전에는 임의 평균값을 만들지 않는다. 팀 OVR은 현재 `0`으로
+표시하며, 검증 가능한 계산식이 확보된 뒤 별도 기능으로 구현한다.
 
-### Infrastructure
+### Tradeability
 
-- Docker
-- Docker Compose 사용 가능
-- DBeaver 사용 가능
+공식 응답의 `noTrade`를 보존한다.
 
-### Development Ports
+- `noTrade = 0`: 거래 가능
+- 그 외: 거래 불가
 
-- Vue: 5173
-- Spring Boot: 8080
-- MariaDB: 3306
+가격 갱신 대상은 거래 가능한 카드다. 사용자용 검색과 필터 메타데이터는 거래 가능한 카드만
+기본 노출한다. 거래 불가 카드는 원본 snapshot과 MariaDB에서 삭제하지 않으며, 직접 `cid`
+상세 조회와 명시적인 진단용 `tradeable=false` 검색은 보존한다.
 
-## Current Project State
+## Official Data Source
 
-현재 구현된 기능:
+선수 원본은 FC Mobile 공식 스쿼드 메이커의 공개 웹 요청을 사용한다.
 
-- 선수 검색 UI
-- 선수 카드 UI
-- 선수 상세보기
-- 선수 세부 능력치 표시
-- 카드 이미지 + 선수 이미지 표시
-- 0진 ~ 15진 가격 표시
-- 선수 한줄평 UI
-- 스쿼드 필드 UI
-- 스쿼드 슬롯 선수 등록
-- 동일 실제 선수 중복 등록 방지
-- Vue → Spring REST API 통신
-- GET /api/players?name=... 선수 검색 API
+```text
+GET  /DataCenterWeb/SquadMaker
+POST /datacenterweb/SquadMakerAjaxInfo?strMethod=Init
+POST /datacenterweb/SquadMakerAjaxInfo          (PlayerSearchList)
+POST /datacenterweb/SquadMakerAjaxInfo?strMethod=PlayerClass
+```
 
-현재 선수 데이터는 players.json에서 가져오고 있다.
+로그인은 필요 없지만, 공식 페이지가 발급하는 쿠키와 검증 토큰을 가진 익명 세션에서
+정상적인 폼 요청을 보내야 한다. 토큰·쿠키를 저장소나 로그에 기록하지 않는다.
 
-현재 흐름:
+데이터 수집기는 `scripts/collect_fcmobile.py`에 둔다. 수집 원칙은 다음과 같다.
 
-Vue
-→ REST API
-→ Spring Boot
-→ players.json
-→ Spring Boot
-→ JSON Response
-→ Vue
+- 전체 무필터 검색 결과를 카드 목록의 authoritative source로 사용한다.
+- 원본 페이지 응답을 먼저 저장하고, 파생 snapshot은 원본에서 재생성 가능하게 한다.
+- 중간 실패 후 이미 저장한 페이지부터 재개할 수 있어야 한다.
+- 요청 간 지연, 재시도, 지수 backoff를 적용한다.
+- `cid`로 중복을 제거하고 원본 건수와 고유 카드 수를 검증한다.
+- 대용량 snapshot은 재현 가능한 로컬 산출물이므로 Git에 커밋하지 않는다.
 
-## Immediate Goal
+공식 이미지 자산은 `scripts/collect_fcmobile_assets.py`로 별도 수집한다.
 
-players.json을 직접 조회하는 구조를 MariaDB 기반으로 전환한다.
+- 직접 URL: 선수 이미지, 카드 배경, 클래스 로고
+- ID 조립 URL: 국가, 리그, 팀, 특성, 스킬, 플레이스타일, 진화·훈련 아이콘
+- 카드 표시용 `FCOAllSans` 글꼴과 공식 `card_colors.json`도 visual asset으로 보존한다.
+- 공식 프론트 bundle의 ID→파일명 매핑을 manifest에 고정한다.
+- URL과 로컬 파일은 중복 제거하며 중단 후 이미 받은 정상 파일을 재사용한다.
+- 파일은 MariaDB BLOB이나 앱 bundle에 넣지 않고 로컬 asset 디렉터리/오브젝트
+  스토리지에 둔다. MariaDB는 URL, storage key, hash와 연결 관계만 관리한다.
+- 로컬 수집물은 Git에 커밋하지 않는다. 운영 앱은 최종적으로 피모북 CDN URL을 사용한다.
+- upstream에 실제로 없는 URL은 임의 이미지로 성공 처리하지 않고 manifest에 남긴다.
 
-목표 흐름:
+로컬 개발에서는 Spring이 수집된 파일을 `/api/assets/{host}/{path}`로 제공한다. DB에는
+원본 공식 URL을 유지하고, API 응답을 만들 때 로컬 파일이 실제 존재하는 URL만 이 경로로
+치환한다. Vue는 Vite `/api` proxy를 사용하고 모바일은 `EXPO_PUBLIC_API_URL`을 기준으로
+상대 자산 URL을 절대 URL로 변환한다.
 
-Vue
-→ REST API
-→ Spring Boot
-→ MariaDB
-→ Spring Boot
-→ JSON Response
-→ Vue
+공식 기본 카드 합성 좌표는 256×256 정사각형을 기준으로 유지한다.
 
-기존 Vue의 선수 검색 및 상세 UI는 DB 전환 이후에도 정상적으로 동작해야 한다.
+- OVR: `left 22%`, `top 10%`, `FCOAllSans-Bold`
+- 포지션: `left 23%`, `top 24%`, `FCOAllSans-Regular`
+- 선수명: `bottom 25.5%`, 중앙 `width 55%`, `FCOAllSans-Regular`
+- 국기·리그·팀 아이콘: `bottom 16.1%`, 아이콘 높이 카드의 `1/12`
+- 글자색: 배경 파일명에 대응하는 공식 `card_colors.json`; 없으면 흰색
 
-## Player Domain Model
+공식 `ClassInfos`의 항목은 카드에 포함된 단일 시즌 값이라고 가정하면 안 된다. 클래스
+필터 결과는 서로 겹칠 수 있고 모든 카드를 포함하지도 않는다. 따라서 카드와 공식 클래스
+필터는 `card_classes` 다대다 관계로 저장한다. upstream이 직접 주지 않은 canonical class를
+임의로 추측하지 않는다.
 
-FC Mobile 데이터에서 중요한 식별자는 `pid`와 `cid`다.
+## Price Refresh Business Rule
 
-### pid
+가격은 0진부터 15진까지 16단계다. 모든 카드 가격을 주기적으로 전수 조회하지 않는다.
+상세 조회를 실제 수요 신호로 사용하는 cache-aside 방식으로 동작한다.
 
-실제 축구선수의 ID.
-
-예:
-
-손흥민이라는 실제 선수는 하나의 pid를 가진다.
-
-같은 실제 선수의 서로 다른 시즌 카드는 같은 pid를 공유할 수 있다.
-
-### cid
-
-FC Mobile 선수 카드의 고유 ID.
-
-시즌이나 클래스가 다르면 같은 실제 선수라도 서로 다른 cid를 가진다.
-
-따라서:
-
-- cid = 선수 카드의 Primary Key
-- pid = 실제 선수 식별자
-- 하나의 pid가 여러 cid를 가질 수 있음
-
-예:
-
-손흥민 UTOTY
-pid = 200104
-cid = A
-
-손흥민 다른 시즌
-pid = 200104
-cid = B
-
-두 카드는 서로 다른 선수 카드 데이터다.
-
-## Squad Domain Rules
-
-스쿼드는 기본적으로 11명의 선수를 가진다.
-
-한 스쿼드 안에서는 같은 실제 선수를 중복 사용할 수 없다.
-
-즉:
-
-cid가 달라도 pid가 같으면 같은 스쿼드에 동시에 등록할 수 없다.
-
-예:
-
-손흥민 UTOTY + 손흥민 다른 시즌
-
-→ 같은 pid이므로 같은 스쿼드에서 중복 사용 불가.
-
-스쿼드 저장 기능이 추가되면
-사용자별로 여러 스쿼드를 저장할 수 있도록 설계한다.
-
-## Player Data
-
-현재 players.json에는 다음 종류의 정보가 존재한다.
-
-- cid
-- pid
-- 선수 이름
-- 클래스 / 시즌
-- 선수 이미지
-- 카드 배경 이미지
-- 포지션
-- 서브 포지션
-- OVR
-- 팀
-- 리그
-- 국가
-- 키
-- 몸무게
-- 주발
-- 약발
-- 개인기
-- 특성
-- 플레이스타일
-- 상세 능력치
-- 0진 ~ 15진 가격
-- 기타 FC Mobile 원본 데이터
-
-DB 설계 시 모든 원본 값을 반드시 개별 컬럼으로 만들 필요는 없다.
-
-검색, 정렬, 필터링, 관계 설정에 자주 사용하는 데이터는 일반 컬럼으로 저장하고,
-복잡하거나 자주 검색하지 않는 상세 데이터는 JSON 컬럼 등 적절한 방식으로 저장해도 된다.
-
-구현 방식은 프로젝트 유지보수성과 기능 요구사항을 기준으로 판단한다.
-
-## Reviews
-
-선수 평가는 실제 선수(pid)가 아니라 선수 카드(cid)를 기준으로 한다.
-
-즉 같은 실제 선수라도 시즌 카드가 다르면 별도의 평가 공간을 가진다.
-
-평가 기본 구조:
-
-- user
-- cid
-- rating (1 ~ 5)
-- short review
-- created_at
-- updated_at
-
-향후 필요하면:
-
-- 좋아요
-- 싫어요
-
-등을 확장할 수 있다.
-
-댓글형 리뷰 시스템은 현재 핵심 요구사항이 아니다.
-
-## Squad Persistence
-
-향후 DB 저장 구조에서는 최소한 다음 개념이 필요하다.
-
-- users
-- squads
-- squad_players
-
-squad_players는 어떤 스쿼드의 어떤 포지션 슬롯에 어떤 cid가 등록되어 있는지를 표현한다.
-
-구체적인 테이블 구조는 구현 시점에 가장 적절한 방식으로 설계한다.
-
-## Future Community
-
-커뮤니티 기능은 현재 우선순위가 높지 않다.
-
-향후 필요하면 다음 개념을 추가할 수 있다.
-
-- posts
-- comments
-- likes
-
-현재 단계에서 사용하지 않는 커뮤니티 구조를 미리 과도하게 구현할 필요는 없다.
-
-## Evolution Simulator
-
-선수 카드의 진화는 최대 15진까지 표현한다.
-
-초기 버전에서는 실제 FC Mobile의 모든 강화 재료 및 확률 공식을 완벽하게 복제할 필요는 없다.
-
-우선 다음 기능을 목표로 한다.
-
-- 현재 진화 단계
-- 목표 진화 단계
-- 게이지
-- 성공 / 실패
-- 랜덤 결과
-
-향후 실제 데이터 또는 더 정확한 공식이 확보되면 확장할 수 있다.
-
-## Authentication
-
-향후 사용자 기능을 위해 로그인 시스템을 추가한다.
-
-로그인 전에도 다음 기능은 사용할 수 있도록 하는 방향을 선호한다.
-
-- 선수 검색
-- 선수 상세 조회
-- 선수 평가 조회
-- 스쿼드 구성
-
-로그인이 필요한 기능:
-
-- 선수 평가 작성
-- 선수 평가 수정 / 삭제
-- 스쿼드 저장
-- 저장된 스쿼드 관리
-
-Google 로그인 등의 OAuth 로그인은 이후 추가할 수 있다.
-
-## API Direction
-
-Frontend와 Backend는 REST API를 통해 통신한다.
-
-예상 API 형태:
-
-GET /api/players
+```text
 GET /api/players/{cid}
-
-GET /api/reviews
-POST /api/reviews
-PUT or PATCH /api/reviews/{id}
-DELETE /api/reviews/{id}
-
-GET /api/squads
-POST /api/squads
-GET /api/squads/{id}
-PUT /api/squads/{id}
-DELETE /api/squads/{id}
-
-실제 URI와 DTO 구조는 구현 과정에서 더 적절한 형태가 있다면 변경해도 된다.
-
-## Architecture Direction
-
-현재 단계에서는 하나의 Spring Boot Backend를 중심으로 개발한다.
-
-예상 구조는 대략 다음과 같다.
-
-Controller
-→ Service
-→ Repository
-→ Database
-
-하지만 프로젝트 규모에 비해 불필요한 계층이나 추상화는 만들 필요가 없다.
-
-반대로 현재 구조가 기능 확장에 방해가 된다면 리팩터링해도 된다.
-
-Vue 역시 필요하다면:
-
-- views
-- components
-- services
-- stores
-
-등으로 구조를 개선할 수 있다.
-
-## Development Philosophy
-
-최우선 순위는 실제 동작하는 서비스를 만드는 것이다.
-
-기존 구조를 무조건 보존할 필요는 없다.
-
-더 나은 구현을 위해 필요한 경우:
-
-- 파일 이동
-- 컴포넌트 분리
-- 클래스 분리
-- DB 스키마 변경
-- API 구조 개선
-- 리팩터링
-- 테스트 추가
-- Docker 구성 추가
-
-등을 자율적으로 수행해도 된다.
-
-단순히 기존 코드를 유지하기 위해 좋지 않은 구조를 계속 사용할 필요는 없다.
-
-기존 구현보다 명확하고 유지보수하기 좋은 방법이 있다면 개선한다.
-
-## Engineering Preferences
-
-다음 방향을 선호한다.
-
-- 구현 가능한 단순한 구조
-- 이해 가능한 코드
-- 실제 실행 및 테스트
-- 명확한 데이터 흐름
-- 과도한 추상화 회피
-- 현재 규모에 맞는 설계
-- 기능 확장이 가능한 구조
-- 데이터 손실 방지
-- 기존 사용자 기능이 깨지지 않도록 검증
-
-## Technology Direction
-
-새로운 기술 도입 자체가 목적은 아니다.
-
-현재 Vue + Spring Boot + MariaDB로 충분히 해결 가능한 문제라면 해당 스택을 우선 사용한다.
-
-하지만 기능 구현이나 유지보수에 명확한 이점이 있다면 필요한 라이브러리나 도구를 추가해도 된다.
-
-현재 단계에서는 MSA가 필수 요구사항은 아니다.
-
-서비스가 충분히 커지고 분리할 이유가 생기면 이후 MSA를 검토한다.
-
-AI 기능 역시 서비스에 실제 가치가 있을 때 추가한다.
-
-## Testing and Validation
-
-코드를 수정한 경우 가능한 범위에서 실제 실행으로 검증한다.
-
-예:
-
-- Vue build
-- Spring build
-- Spring tests
-- REST API 호출
-- DB connection
-- SQL query
-- Docker container health
-
-실행하지 않은 테스트를 성공했다고 가정하지 않는다.
-
-에러가 발생하면 임시로 숨기기보다 원인을 파악하고 해결하는 것을 우선한다.
-
-## Data Migration
-
-players.json은 현재 중요한 원본 데이터다.
-
-MariaDB 전환 과정에서는 데이터 손실이 없어야 한다.
-
-DB 적재가 정상적으로 완료되고 API가 MariaDB를 통해 동작하더라도,
-players.json은 당분간 원본 데이터 또는 백업 데이터로 유지할 수 있다.
-
-## Near-Term Roadmap
-
-### Phase 1
-
-Player data persistence
-
-players.json
-→ MariaDB
-
-완료 조건:
-
-Vue
-→ Spring REST API
-→ MariaDB
-→ JSON
-→ Vue
-
-전체 검색 흐름이 정상 작동한다.
-
-### Phase 2
-
-Review persistence
-
-현재 임시 선수평 저장 방식
-→ Spring REST API + MariaDB CRUD
-
-### Phase 3
-
-Squad persistence
-
-현재 Vue 메모리 기반 스쿼드
-→ 사용자별 DB 저장
-
-### Phase 4
-
-Authentication
-
-회원 및 로그인 시스템 추가
-
-### Phase 5
-
-Evolution Simulator
-
-진화 시뮬레이션 기능 구현
-
-### Phase 6
-
-Community and AI
-
-필요에 따라 커뮤니티 및 AI 기능 확장
-
-## Agent Autonomy
-
-프로젝트 목표를 달성하기 위해 필요한 구현 판단은 자율적으로 해도 된다.
-
-현재 코드가 좋지 않거나 확장에 방해가 된다면 수정하거나 재구성해도 된다.
-
-단순히 최소 수정만 하는 것보다
-최종적으로 정상 동작하고 유지보수 가능한 결과를 만드는 것을 우선한다.
-
-작업 중 문제가 발견되면 가능한 범위에서 직접 분석하고 해결한다.
-
-명백하게 사용자 판단이 필요한 제품 정책이나
-돌이키기 어려운 선택이 아니라면
-사소한 구현 결정마다 사용자에게 확인을 요구하지 않아도 된다.
+        │
+        ├─ DB의 현재 상세/가격을 즉시 응답
+        │
+        └─ 거래 가능 + 마지막 가격 확인이 3시간보다 오래됨
+              └─ pid 기준 갱신 작업을 한 번만 queue
+                    └─ background worker가 공식 PlayerClass(pid) 요청
+                          └─ 같은 pid 카드의 0~15진 가격 upsert
+```
+
+- 사용자는 갱신 버튼을 누르지 않는다.
+- 화면에 갱신 중, 몇 분 전 같은 운영 상태를 노출할 필요가 없다.
+- 3시간 안에는 같은 상세를 몇 번 열어도 공식 서버 요청을 다시 보내지 않는다.
+- 동일 `pid` 작업은 DB Primary Key로 중복 제거한다.
+- worker는 제한된 속도로 한 작업씩 처리해 순간 트래픽을 흡수한다.
+- 공식 요청 실패는 사용자 상세 응답을 실패시키지 않으며 재시도한다.
+- 가격이 실제로 바뀐 경우에만 `card_price_history`에 이력을 남긴다.
+- 클래스별 공식 갱신 시각을 추측하거나 그대로 복제하지 않는다.
+
+## Database Model
+
+MariaDB 스키마의 source of truth는
+`backend/src/main/resources/db/schema-mariadb.sql`이다.
+
+핵심 테이블:
+
+- `player_profiles`: `pid` 기준 실제 선수 공통 정보
+- `players`: `cid` 기준 카드, 검색 컬럼, 원본/상세 JSON
+- `player_classes`: 공식 클래스 필터 메타데이터
+- `card_classes`: 카드와 공식 클래스 필터의 다대다 관계
+- `nations`, `leagues`, `teams`: 검색 필터 및 이미지 메타데이터
+- `card_positions`: 주·부 포지션 필터
+- `traits`, `card_traits`: 특성 메타데이터 및 카드 관계
+- `play_styles`, `card_play_styles`: 플레이스타일 및 카드 관계
+- `skills`, `card_skills`: 개인기/스킬 및 카드 관계
+- `card_prices_current`: 카드별 0~15진 현재 가격
+- `card_price_history`: 변경된 가격 이력
+- `price_refresh_jobs`: `pid` 단위 가격 갱신 queue
+- `users`, `reviews`, `squads`, `squad_players`: 사용자 기능
+
+검색·정렬·관계에 필요한 값은 일반 컬럼이나 정규화 테이블로 저장한다. 상세 화면에서 한
+카드와 함께 읽는 능력치 묶음과 원본 보존은 JSON 컬럼을 함께 사용하는 하이브리드 구조다.
+
+- `stats_data`: 상세 능력치
+- `prices_data`: 기존 응답 호환용 0~15진 가격 snapshot
+- `traits_data`, `positions_data`, `play_styles_data`, `skills_data`: 기존 구조 보존
+- `raw_data`: upstream 원본 전체 보존
+
+Importer는 `cid` 기준 upsert로 여러 번 실행해도 중복 행이 생기지 않아야 한다. 완전한
+snapshot을 적재할 때 source에서 사라진 카드는 삭제하지 않고 `is_active = false`로 둔다.
+
+## API Contract
+
+기존 Vue 호환 API는 유지한다.
+
+```http
+GET /api/players?name=크루이프
+```
+
+모바일과 확장 검색은 pagination API를 사용한다.
+
+```http
+GET /api/players/search?name=&position=&classId=&leagueId=&teamId=&nationId=
+    &tradeable=&minOvr=&maxOvr=&priceLevel=0&minPrice=&maxPrice=
+    &traitId=&playStyleId=&sort=ovrDesc&page=0&size=20
+GET /api/players/{cid}
+GET /api/player-metadata
+GET /api/player-metadata/teams?leagueId=&name=&limit=
+```
+
+`tradeable`의 기본값은 `true`다. 모바일과 일반 사용자 화면은 `false`를 보내지 않는다.
+
+상세 응답은 현재 Vue가 사용하는 upstream 키를 계속 제공한다.
+
+- `playerKor`, `ovr`, `position`, `team`, `pimage`, `bimage`
+- 상세 능력치
+- `n8Price0` ~ `n8Price15`
+- `Trait`, 스킬, 플레이스타일
+- 국가·팀·리그·클래스 이미지 정보
+
+공개 조회는 로그인 없이 가능하다. 로그인은 이메일/비밀번호 + JWT로 유지하며 OAuth는
+현재 범위가 아니다. 리뷰 작성·수정·삭제와 서버 스쿼드 저장만 인증이 필요하다.
+
+## Implementation Roadmap
+
+다음 순서가 현재의 기본 실행 계획이다.
+
+### Phase 1 — Data foundation
+
+1. [x] 공식 전체 카드 snapshot 수집을 완주하고 건수를 검증한다.
+2. [x] 클래스 중복을 `card_classes` 다대다 관계로 보존한다.
+3. [x] MariaDB에 전체 카드를 idempotent upsert한다.
+4. [x] 한글, 카드 수, 가격 16단계, 관계 테이블 수를 검증한다.
+5. [x] 과거 장난용 김찬우 카드/이미지를 공식 손흥민 데이터로 복구한다.
+6. [x] 공식 이미지·글꼴·카드 테마 자산 31,557개를 인벤토리화하고 31,398개를 저장했다.
+   공식 CDN에 실제로 없는 159개는 성공 처리하지 않고 manifest에 기록했다.
+
+### Phase 2 — Backend read and refresh API
+
+1. [x] 선수명 부분 검색 및 필터/pagination을 실제 DB로 검증한다.
+2. [x] 상세 응답이 기존 Vue JSON 계약과 호환되는지 검증한다.
+3. [x] 3시간 가격 cache와 `pid` queue/worker를 실제 공식 응답으로 검증한다.
+4. [x] API·Repository·DB 연결 자동 테스트를 추가한다.
+5. [x] 수집·적재·실행·복구 방법을 README와 DB 문서에 기록한다.
+
+### Phase 3 — Mobile MVP
+
+1. [x] Expo + React Native + TypeScript 앱 workspace를 추가한다.
+2. [x] 개발/운영 API base URL과 환경 설정을 분리한다.
+3. [x] 선수 검색, 20장 pagination/무한 스크롤, 카드 목록과 상세 화면을 구현한다.
+4. [x] 로컬 수집 자산과 공식 카드 레이어를 Vue·React Native 공통 API에 연결한다.
+5. [x] 공식 메타데이터 API를 이용한 검색 필터 UI를 구현한다.
+6. [x] JWT 회원가입·로그인과 안전한 토큰 저장을 연결한다.
+7. [x] 로컬 스쿼드 빌더, 선택적 서버 저장과 카드 리뷰를 연결한다.
+8. [ ] 실제 Android/iOS 기기에서 네트워크·이미지·인증을 검증한다.
+
+### Phase 4 — Production readiness
+
+1. 운영 DB migration 도구를 도입한다. 이 시점에는 Flyway를 우선 검토한다.
+2. 비밀값과 환경 설정을 저장소 밖으로 분리한다.
+3. API 오류 응답, timeout, rate limit, 로그와 health check를 정리한다.
+4. DB backup/restore와 데이터 수집 실패 복구 절차를 만든다.
+5. 권리·이용약관·개인정보·공식 데이터/이미지 사용 조건을 검토한다.
+6. Expo EAS Build/Submit 또는 확정된 배포 파이프라인으로 스토어 테스트를 진행한다.
+
+## Definition of Done
+
+기능은 코드를 작성한 것만으로 완료 처리하지 않는다. 관련 범위에서 실제로 다음을 확인한다.
+
+- MariaDB container healthy
+- schema가 기존 DB와 fresh DB 모두에 적용 가능
+- 수집 reported count와 snapshot unique count 검증
+- DB active card count와 snapshot card count 일치
+- 한글 선수명과 이미지 URL이 정상
+- `크루이프` 부분 검색 결과 확인
+- 특정 `cid` 상세 JSON과 0~15진 가격 확인
+- 상세 진입의 fresh-cache 무요청 및 stale-cache 단일 queue 확인
+- worker 성공/실패·중복 제거 확인
+- Spring 자동 테스트 통과
+- 기존 Vue production build 및 핵심 기능 회귀 없음
+- 확인하지 못한 항목은 완료했다고 보고하지 않음
+
+## Engineering Rules
+
+- 기존 사용자의 작업과 unrelated dirty file을 덮어쓰지 않는다.
+- Vue는 모바일 전환 전까지 회귀 검증 클라이언트로 보존한다. 백엔드 작업 때문에 불필요하게
+  UI를 고치지 않는다.
+- Controller에 긴 SQL이나 upstream 호출 로직을 넣지 않는다.
+- 현재 규모에서는 JdbcClient/JdbcTemplate을 유지하고 불필요한 repository abstraction이나
+  새 프레임워크를 추가하지 않는다.
+- upstream 데이터를 추측해 채우지 않는다. 불확실하면 nullable 또는 원본 JSON으로 보존한다.
+- DB에 없는 대량 결과를 메모리에서 매 요청 필터링하지 않는다.
+- 파괴적인 DB 초기화보다 additive schema와 upsert를 우선한다.
+- 실패를 숨기는 우회 구현을 하지 않는다. 실제 에러 원인과 미검증 범위를 먼저 기록한다.
+- 외부 요청은 최소화하고 지연·timeout·retry·deduplication을 둔다.
+- local secret, token, cookie, 대용량 snapshot, build artifact는 Git에 커밋하지 않는다.
+
+## Local Development Defaults
+
+```text
+Vue:        http://localhost:5173 (사용 중이면 5174)
+Spring:     http://localhost:8080
+MariaDB:    localhost:3306
+Database:   fimobook
+Username:   fimobook
+Password:   fimobook-local
+```
+
+기본 명령:
+
+```sh
+docker compose up -d
+docker compose ps
+
+python3 scripts/collect_fcmobile.py \
+  --output-dir data/fcmobile/snapshots/<snapshot-name>
+
+cd backend
+./gradlew bootRun \
+  --args="--fimo.players.import-enabled=true --fimo.players.import-path=../data/fcmobile/snapshots/<snapshot-name>/cards.json --spring.main.web-application-type=none"
+
+FIMO_DB_TEST=true ./gradlew clean test
+./gradlew bootRun
+```
+
+자세한 실행 방법과 현재 검증 결과는 `README.md`와 `backend/DB_SCHEMA.md`를 함께 갱신한다.

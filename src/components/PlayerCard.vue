@@ -1,4 +1,6 @@
 <script setup>
+import PlayerCardVisual from "./PlayerCardVisual.vue";
+
 defineProps({
   player: Object,
 });
@@ -9,9 +11,7 @@ const emit = defineEmits(["open", "add-squad"]);
 <template>
   <div class="player-card">
     <div class="card-image">
-      <img class="card-background" :src="player.bimage" alt="" />
-
-      <img class="player-image" :src="player.pimage" :alt="player.playerKor" />
+      <PlayerCardVisual :player="player" />
     </div>
 
     <h3>{{ player.playerKor }}</h3>
@@ -37,25 +37,9 @@ const emit = defineEmits(["open", "add-squad"]);
 
 .card-image {
   position: relative;
-  width: 150px;
-  height: 180px;
+  width: 168px;
+  height: 168px;
   margin: 0 auto;
-}
-
-.card-background {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.player-image {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 
 button {

@@ -1,45 +1,97 @@
-# MariaDB 선수 스키마 설계
+# MariaDB 데이터 모델
 
-## 설계 기준
+스키마 source of truth는
+`backend/src/main/resources/db/schema-mariadb.sql`이다. MariaDB 11.2와
+`utf8mb4_unicode_ci`를 기준으로 하며, 애플리케이션이 기록하는 관측시각은 UTC로 통일한다.
 
-- `cid`는 카드 한 장의 고유 ID이므로 `players`의 기본 키로 사용한다.
-- `pid`는 실제 선수 ID이며 같은 선수의 시즌별 카드가 여러 개 존재할 수 있으므로 유일 키로 만들지 않고 일반 인덱스만 둔다.
-- 현재 검색과 카드 목록에서 자주 쓰는 값은 일반 컬럼으로 저장한다.
-- 상세 화면에서 묶음으로 읽고 개별 조건 검색을 하지 않는 능력치, 가격, 특성은 JSON 컬럼으로 저장한다.
-- 현재 쓰지 않는 원본 필드는 `raw_data`에 보존해 초기 적재 과정에서 정보가 유실되지 않게 한다.
+## 핵심 식별자
 
-## 필드 분류
+- `pid`: 실제 선수 고유 ID. 한 선수가 여러 카드를 가질 수 있다.
+- `cid`: 카드 고유 ID. `players`의 Primary Key다.
+- 리뷰와 스쿼드는 카드 `cid`를 참조한다.
+- 스쿼드 저장 시 서로 다른 `cid`라도 같은 `pid`면 중복 선수로 차단한다.
 
-### 현재 기능에 직접 필요한 일반 컬럼
+## 선수 데이터 구조
 
-| JSON 필드 | DB 컬럼 | 용도 |
+### 선수와 카드
+
+| 테이블 | 키 | 역할 |
 |---|---|---|
-| `cid` | `cid` | 카드 식별, Vue 목록 key, 리뷰 key |
-| `pid` | `pid` | 동일 선수의 다른 카드 판별 |
-| `playerKor`, `playerEng` | `player_name_kor`, `player_name_eng` | 검색 및 상세 표시 |
-| `pimage`, `bimage` | `player_image_url`, `background_image_url` | 카드 이미지 |
-| `ovr`, `position`, `potentialPosition` | `overall_rating`, `primary_position`, `potential_position` | 카드 및 상세 표시 |
-| `teamid`, `team`, `leagueid`, `league` | 대응 팀·리그 컬럼 | 상세 표시와 향후 필터 |
-| `nationality`, `nation` | 대응 국가 컬럼 | 상세 표시와 향후 필터 |
-| `height`, `weight`, `mainFoot`, `WFA` | 대응 신체·주발 컬럼 | 상세 표시 |
-| `skillMovesLevel`, `skillMovesName` | 대응 개인기 컬럼 | 상세 표시 |
-| `PlayerYear` | `player_year` | 카드 구분 및 향후 필터 |
+| `player_profiles` | `pid` | 이름, 국적, 생일, 신체 정보 등 실제 선수 공통값 |
+| `players` | `cid` | OVR, 포지션, 팀, 리그, 이미지 등 카드별 값 |
 
-### 현재 필요하지만 묶어서 저장하는 필드
+`players`에는 목록 검색과 정렬에 필요한 값을 일반 컬럼으로 둔다.
 
-- `stats_data`: `ACC`, `SPD`, `FIN`, `SHO`, `LSA`, `VOL`, `PEN`, `SPA`, `LPA`, `VIS`, `CRO`, `CUR`, `FRK`, `DRI`, `BAC`, `AGI`, `REA`, `BAL`, `MRK`, `STT`, `SLT`, `AWR`, `HEA`, `STR`, `AGG`, `JMP`, `STA`
-- `prices_data`: `n8Price0`부터 `n8Price15`
-- `traits_data`: `Trait` 배열
+- 이름: `player_name_kor`, `player_name_eng`
+- 검색/필터: `overall_rating`, `primary_position`, `team_id`, `league_id`, `nationality_id`
+- 이미지: `player_image_url`, `background_image_url`
+- 상태: `is_tradeable`, `is_active`, `source_seen_at`
+- 가격 cache: `price_checked_at`
 
-이 값들은 현재 상세 화면에서 카드 한 장과 함께 전부 읽는다. 이번 단계에서 개별 컬럼이나 별도 테이블로 과도하게 정규화하지 않는다. 가격 이력 검색이나 능력치 조건 검색이 실제 요구사항이 되면 그때 별도 테이블 또는 컬럼으로 승격한다.
+사용자 카탈로그는 `is_active=true AND is_tradeable=true`인 카드만 기본 검색한다. 거래 불가
+카드도 공식 원본 보존과 기존 참조 무결성을 위해 삭제하지 않는다.
 
-### 나중에 검토할 필드
+상세 화면에서 카드와 함께 읽고 원본 호환이 필요한 묶음은 JSON으로도 보존한다.
 
-현재 UI가 사용하지 않는 `enhance`, `grade`, `training`, `cardtype`, `skillInfo`, 보조 포지션, 워크레이트, 골키퍼 능력치 등은 우선 `raw_data`에 보존한다. 검색·정렬 요구가 생긴 필드만 일반 컬럼으로 이동한다.
+- `stats_data`: 상세 능력치
+- `prices_data`: `n8Price0`~`n8Price15` 호환 snapshot
+- `traits_data`, `positions_data`, `play_styles_data`, `skills_data`
+- `raw_data`: upstream 원본 전체
 
-## 실행, 적용 및 연결 확인
+### 검색 필터와 이미지 메타데이터
 
-스키마 파일은 `src/main/resources/db/schema-mariadb.sql`에 있다. 프로젝트 루트의 Compose 환경은 빈 volume을 최초 초기화할 때 이 파일을 자동 적용한다. 이미 생성된 DB에 스키마를 다시 적용할 때는 다음 명령을 사용한다.
+| 기준 테이블 | 관계 테이블 | 용도 |
+|---|---|---|
+| `player_classes` | `card_classes` | 공식 클래스 필터와 카드의 다대다 관계 |
+| `nations` | `players.nationality_id` | 국가명과 국기 URL |
+| `leagues` | `players.league_id` | 리그명과 로고 URL |
+| `teams` | `players.team_id` | 팀명과 로고 URL |
+| - | `card_positions` | 주·잠재·부 포지션 검색 |
+| `traits` | `card_traits` | 특성 검색과 아이콘 |
+| `play_styles` | `card_play_styles` | 플레이스타일 검색과 아이콘 |
+| `skills` | `card_skills` | 카드별 스킬과 레벨 |
+
+공식 `ClassInfos` 필터는 서로 겹치며 전체 카드의 단일 시즌 값을 직접 제공하지 않는다.
+따라서 `players.class_id` 같은 단일 컬럼은 사용하지 않고 `card_classes`만을 source of
+truth로 사용한다.
+
+### 가격
+
+| 테이블 | 역할 |
+|---|---|
+| `card_prices_current` | `(cid, enhancement_level)`별 현재 가격 |
+| `card_price_history` | 실제 가격이 바뀐 시점의 이력 |
+| `price_refresh_jobs` | `pid` 기준 중복 제거된 백그라운드 갱신 작업 |
+
+상세 API는 DB 값을 즉시 반환한다. 거래 가능 카드의 `price_checked_at`이 3시간보다
+오래됐으면 `pid` 작업을 하나 queue한다. worker는 공식 `PlayerClass(pid)` 결과에서 같은
+실제 선수의 거래 가능 카드 가격 16단계를 갱신한다.
+
+worker 실행 중 프로세스가 종료된 경우 `locked_at`이 설정 시간보다 오래된 `RUNNING`
+작업을 다시 `PENDING`으로 복구한다.
+
+## 사용자 데이터
+
+- `users`: 이메일, BCrypt 비밀번호 해시, 표시 이름
+- `auth_refresh_tokens`: 원문을 저장하지 않는 SHA-256 Refresh Token 해시와 만료·폐기 시각
+- `reviews`: 사용자와 카드 `cid`에 연결된 별점·한줄평. `(user_id, cid)`가 UNIQUE
+- `review_reactions`: 리뷰별 사용자 좋아요·싫어요. `(review_id, user_id)`가 PK
+- `squads`: 사용자 소유 스쿼드
+- `squad_players`: 스쿼드 슬롯과 카드 `cid`
+
+사용자 삭제 시 해당 리뷰와 스쿼드는 cascade 삭제된다. 스쿼드에서 참조 중인 카드는
+임의 삭제하지 않고, 공식 snapshot에서 사라진 카드는 `is_active=false`로 비활성화한다.
+
+## 스키마 적용
+
+신규 Docker volume은 Compose가 스키마를 자동 적용한다.
+
+```sh
+docker compose up -d
+docker compose ps
+```
+
+기존 개발 DB에는 다음 명령으로 additive schema와 명시된 호환 정리를 다시 적용한다.
 
 ```sh
 docker exec -i fimobook-mariadb \
@@ -47,38 +99,35 @@ docker exec -i fimobook-mariadb \
   < backend/src/main/resources/db/schema-mariadb.sql
 ```
 
-연결 정보는 다음 환경변수로 전달한다.
+## 공식 snapshot 수집 및 적재
 
-```text
-FIMO_DB_URL=jdbc:mariadb://localhost:3306/fimobook
-FIMO_DB_USERNAME=fimobook
-FIMO_DB_PASSWORD=fimobook-local
-```
-
-로컬 개발 기본값은 `application.properties` 및 `compose.yaml`에 맞춰져 있어 별도 환경변수 없이도 연결된다. 다른 비밀번호를 사용할 때만 환경변수를 덮어쓴다.
-
-선수 원본을 `cid` 기준 upsert로 적재한다.
+프로젝트 루트에서:
 
 ```sh
+python3 scripts/collect_fcmobile.py \
+  --output-dir data/fcmobile/snapshots/20260813-official \
+  --delay-seconds 0.5
+```
+
+페이지는 원자적으로 저장되며 같은 명령을 다시 실행하면 이미 받은 페이지를 건너뛴다.
+수집 도중 `manifest.json`은 `state=COLLECTING`, `complete=false`다. 전체 건수와 고유
+`cid`가 일치한 뒤에만 `state=COMPLETE`, `complete=true`가 된다.
+
+완성된 snapshot을 적재한다.
+
+```sh
+cd backend
 ./gradlew bootRun \
-  --args='--fimo.players.import-enabled=true --spring.main.web-application-type=none'
+  --args="--fimo.players.import-enabled=true --fimo.players.import-path=../data/fcmobile/snapshots/20260813-official/cards.json --spring.main.web-application-type=none"
 ```
 
-여러 번 실행해도 같은 `cid`는 갱신되며 행이 중복 생성되지 않는다.
+Importer는 `cid` 기준 upsert다. 완성 manifest의 `reportedCardCount`, `uniqueCardCount`,
+실제 `cards.json` 길이가 일치하지 않으면 완성 snapshot으로 처리하지 않는다. 전체 import가
+끝난 뒤에만 이전 source에서 사라진 카드를 비활성화한다. 각 카드의
+`sourceObservedAt`보다 DB 가격의 `observed_at`이 더 최신이면 수집 목록의 오래된 가격으로
+되돌리지 않는다.
 
-스키마를 적용하고 위 접속 정보를 설정한 뒤 다음 명령으로 실제 MariaDB 연결과 `SELECT 1`을 확인한다.
-
-```sh
-FIMO_DB_TEST=true ./gradlew test --tests '*DatabaseConnectionTests'
-```
-
-`FIMO_DB_TEST=true`가 없으면 DB 통합 테스트는 건너뛴다.
-
-## 조회 흐름
-
-`PlayerController`는 더 이상 JSON 파일을 읽지 않는다. `PlayerRepository`가 `player_name_kor` 컬럼으로 부분 검색하고, 일반 컬럼 및 JSON 컬럼을 기존 FC Mobile JSON 키로 조립해 반환한다. `raw_data`는 원본 손실 방지와 아직 승격하지 않은 필드 보존에 사용한다.
-
-## DBeaver
+## DBeaver 연결
 
 | 항목 | 값 |
 |---|---|
@@ -88,14 +137,18 @@ FIMO_DB_TEST=true ./gradlew test --tests '*DatabaseConnectionTests'
 | Username | `fimobook` |
 | Password | `fimobook-local` |
 
-직접 확인할 SQL:
+## 확인 SQL
 
 ```sql
 SHOW TABLES;
 
-SELECT COUNT(*) FROM players;
+SELECT COUNT(*) AS total_cards,
+       SUM(is_active) AS active_cards,
+       COUNT(DISTINCT pid) AS real_players
+FROM players;
 
-SELECT cid, pid, player_name_kor, overall_rating, primary_position
+SELECT cid, pid, player_name_kor, overall_rating, primary_position,
+       is_tradeable, price_checked_at
 FROM players
 WHERE player_name_kor LIKE '%크루이프%'
 ORDER BY overall_rating DESC;
@@ -103,13 +156,25 @@ ORDER BY overall_rating DESC;
 SELECT *
 FROM players
 WHERE cid = 22901979;
+
+SELECT enhancement_level, price, observed_at, changed_at
+FROM card_prices_current
+WHERE cid = 22901979
+ORDER BY enhancement_level;
+
+SELECT pc.class_id, pc.class_name
+FROM card_classes cc
+JOIN player_classes pc ON pc.class_id = cc.class_id
+WHERE cc.cid = 22901979;
+
+SELECT pid, requested_cid, status, attempts, available_at, locked_at, last_error
+FROM price_refresh_jobs
+ORDER BY created_at;
 ```
 
-## 사용자 기능 테이블
+실제 DB 연결 테스트:
 
-- `users`: 이메일, BCrypt 비밀번호 해시, 닉네임
-- `reviews`: 사용자와 선수 카드 `cid`에 연결된 별점·한줄평
-- `squads`: 사용자별 스쿼드
-- `squad_players`: 슬롯과 선수 카드 `cid` 연결
-
-`users` 삭제 시 해당 리뷰와 스쿼드는 cascade 삭제된다. 선수 카드는 원본 데이터이므로 스쿼드에서 참조 중일 때 임의 삭제되지 않는다.
+```sh
+cd backend
+FIMO_DB_TEST=true ./gradlew clean test
+```

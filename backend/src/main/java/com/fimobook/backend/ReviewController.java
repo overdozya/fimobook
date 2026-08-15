@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.dao.DuplicateKeyException;
 
 @RestController
 @RequestMapping("/api")
@@ -36,7 +37,11 @@ public class ReviewController {
     public ReviewRepository.Review create(@PathVariable long cid, @RequestBody ReviewRequest request,
             Authentication authentication) {
         validate(request);
-        return repository.create(userId(authentication), cid, request.rating(), request.content().trim());
+        try {
+            return repository.create(userId(authentication), cid, request.rating(), request.content().trim());
+        } catch (DuplicateKeyException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "한 카드에는 평가를 하나만 작성할 수 있습니다.");
+        }
     }
 
     @PutMapping("/reviews/{id}")
@@ -54,9 +59,10 @@ public class ReviewController {
     }
 
     @PostMapping("/reviews/{id}/{reaction:like|dislike}")
-    public ReviewRepository.Review react(@PathVariable long id, @PathVariable String reaction) {
+    public ReviewRepository.Review react(@PathVariable long id, @PathVariable String reaction,
+            Authentication authentication) {
         repository.findById(id).orElseThrow(() -> notFound("평가를 찾을 수 없습니다."));
-        return repository.react(id, reaction);
+        return repository.react(id, userId(authentication), reaction);
     }
 
     private void requireOwner(long id, Authentication authentication) {

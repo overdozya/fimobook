@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -19,17 +20,23 @@ public class AuthController {
     public record Credentials(String email, String password, String displayName) {
     }
 
-    public record AuthResponse(String token, long userId, String email, String displayName) {
+    public record AuthResponse(String token, String refreshToken, long userId, String email, String displayName) {
+    }
+
+    public record RefreshRequest(String refreshToken) {
     }
 
     private final AuthRepository repository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
-    public AuthController(AuthRepository repository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthController(AuthRepository repository, PasswordEncoder passwordEncoder, JwtService jwtService,
+            RefreshTokenService refreshTokenService) {
         this.repository = repository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @PostMapping("/register")
@@ -59,8 +66,34 @@ public class AuthController {
         return response(user);
     }
 
+    @GetMapping("/me")
+    public AuthResponse me(org.springframework.security.core.Authentication authentication) {
+        long userId = (Long) authentication.getPrincipal();
+        var user = repository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "사용자를 찾을 수 없습니다."));
+        return new AuthResponse(null, null, user.id(), user.email(), user.displayName());
+    }
+
+    @PostMapping("/refresh")
+    public AuthResponse refresh(@RequestBody RefreshRequest request) {
+        var rotation = refreshTokenService.rotate(request.refreshToken());
+        var user = repository.findById(rotation.userId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "사용자를 찾을 수 없습니다."));
+        return response(user, rotation.refreshToken());
+    }
+
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@RequestBody RefreshRequest request) {
+        refreshTokenService.revoke(request.refreshToken());
+    }
+
     private AuthResponse response(AuthRepository.User user) {
-        return new AuthResponse(jwtService.create(user.id(), user.email()),
+        return response(user, refreshTokenService.create(user.id()));
+    }
+
+    private AuthResponse response(AuthRepository.User user, String refreshToken) {
+        return new AuthResponse(jwtService.create(user.id(), user.email()), refreshToken,
                 user.id(), user.email(), user.displayName());
     }
 

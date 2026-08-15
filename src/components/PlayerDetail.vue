@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { auth, apiFetch } from "../auth";
+import PlayerCardVisual from "./PlayerCardVisual.vue";
 
 const props = defineProps({
   player: Object,
@@ -21,7 +22,7 @@ const currentReviews = computed(() => {
 });
 
 const loadReviews = async () => {
-  const response = await fetch(`http://localhost:8080/api/players/${props.player.cid}/reviews`);
+  const response = await fetch(`/api/players/${props.player.cid}/reviews`);
   if (response.ok) reviews.value = await response.json();
 };
 
@@ -209,9 +210,7 @@ const mainFootText = computed(() => {
       <section class="top-section">
         <div class="card-area">
           <div class="card-image">
-            <img class="card-background" :src="player.bimage" alt="" />
-
-            <img class="player-image" :src="player.pimage" :alt="player.playerKor" />
+            <PlayerCardVisual :player="player" />
           </div>
         </div>
 
@@ -237,12 +236,18 @@ const mainFootText = computed(() => {
           <div class="info-grid">
             <div>
               <span>국가</span>
-              <strong>{{ player.nation }}</strong>
+              <strong class="value-with-icon">
+                <img v-if="player.assets?.flag" :src="player.assets.flag" alt="" />
+                {{ player.nation }}
+              </strong>
             </div>
 
             <div>
               <span>리그</span>
-              <strong>{{ player.league || "-" }}</strong>
+              <strong class="value-with-icon">
+                <img v-if="player.assets?.league" :src="player.assets.league" alt="" />
+                {{ player.league || "-" }}
+              </strong>
             </div>
 
             <div>
@@ -306,10 +311,19 @@ const mainFootText = computed(() => {
           <h3>특성</h3>
 
           <span v-for="trait in player.Trait" :key="trait.id" class="trait">
+            <img v-if="trait.iconUrl" :src="trait.iconUrl" alt="" />
             {{ trait.name }}
           </span>
 
           <p v-if="!player.Trait || player.Trait.length === 0">특성 없음</p>
+        </div>
+
+        <div v-if="player.playStyles?.length" class="traits">
+          <h3>플레이스타일</h3>
+          <span v-for="playStyle in player.playStyles" :key="playStyle.id" class="trait">
+            <img v-if="playStyle.iconUrl" :src="playStyle.iconUrl" alt="" />
+            {{ playStyle.name }}
+          </span>
         </div>
       </section>
 
@@ -479,20 +493,11 @@ const mainFootText = computed(() => {
   position: relative;
 
   width: 280px;
-  height: 330px;
+  height: 280px;
 }
 
-.card-background,
-.player-image {
-  position: absolute;
-
-  inset: 0;
-
-  width: 100%;
-  height: 100%;
-
-  object-fit: contain;
-}
+.value-with-icon { align-items: center; display: flex; gap: 8px; }
+.value-with-icon img { height: 22px; object-fit: contain; width: 22px; }
 
 .basic-info h1 {
   margin-bottom: 4px;
@@ -577,6 +582,9 @@ const mainFootText = computed(() => {
 }
 
 .trait {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
   display: inline-block;
 
   margin-right: 8px;
@@ -588,6 +596,8 @@ const mainFootText = computed(() => {
 
   border-radius: 20px;
 }
+
+.trait img { height: 24px; object-fit: contain; width: 24px; }
 
 .stats-grid {
   display: grid;
@@ -712,7 +722,6 @@ const mainFootText = computed(() => {
 
 .review-actions button {
   padding: 6px 10px;
-
   cursor: pointer;
 }
 
@@ -735,7 +744,7 @@ const mainFootText = computed(() => {
 
   .card-image {
     width: 220px;
-    height: 260px;
+    height: 220px;
   }
 
   .info-grid {

@@ -59,11 +59,41 @@ public class ReviewRepository {
         jdbcClient.sql("DELETE FROM reviews WHERE id=:id").param("id", id).update();
     }
 
-    public Review react(long id, String reaction) {
-        String column = "like".equals(reaction) ? "likes" : "dislikes";
-        jdbcClient.sql("UPDATE reviews SET " + column + " = " + column + " + 1 WHERE id=:id")
-                .param("id", id).update();
+    @Transactional
+    public Review react(long id, long userId, String reaction) {
+        jdbcClient.sql("SELECT id FROM reviews WHERE id=:id FOR UPDATE")
+                .param("id", id).query(Long.class).single();
+        String previous = jdbcClient.sql("""
+                SELECT reaction FROM review_reactions
+                 WHERE review_id=:reviewId AND user_id=:userId
+                """).param("reviewId", id).param("userId", userId)
+                .query(String.class).optional().orElse(null);
+
+        if (reaction.equals(previous)) {
+            jdbcClient.sql("DELETE FROM review_reactions WHERE review_id=:reviewId AND user_id=:userId")
+                    .param("reviewId", id).param("userId", userId).update();
+            adjustCount(id, reaction, -1);
+        } else if (previous == null) {
+            jdbcClient.sql("""
+                    INSERT INTO review_reactions (review_id, user_id, reaction)
+                    VALUES (:reviewId, :userId, :reaction)
+                    """).param("reviewId", id).param("userId", userId).param("reaction", reaction).update();
+            adjustCount(id, reaction, 1);
+        } else {
+            jdbcClient.sql("""
+                    UPDATE review_reactions SET reaction=:reaction
+                     WHERE review_id=:reviewId AND user_id=:userId
+                    """).param("reaction", reaction).param("reviewId", id).param("userId", userId).update();
+            adjustCount(id, previous, -1);
+            adjustCount(id, reaction, 1);
+        }
         return findById(id).orElseThrow();
+    }
+
+    private void adjustCount(long id, String reaction, int delta) {
+        String column = "like".equals(reaction) ? "likes" : "dislikes";
+        jdbcClient.sql("UPDATE reviews SET " + column + " = GREATEST(" + column + " + :delta, 0) WHERE id=:id")
+                .param("delta", delta).param("id", id).update();
     }
 
     private Review map(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

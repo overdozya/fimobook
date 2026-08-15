@@ -22,7 +22,7 @@ export const apiFetch = async (path, options = {}) => {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`http://localhost:8080${path}`, { ...options, headers });
+  const response = await fetch(path, { ...options, headers });
   if (response.status === 401 || response.status === 403) {
     if (auth.value) setAuth(null);
   }

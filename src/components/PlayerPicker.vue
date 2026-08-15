@@ -34,7 +34,7 @@ const search = async (nextPage = 0) => {
 
   try {
     const params = new URLSearchParams({ name: keyword, position: positionFilter.value, page: nextPage, size: 12 });
-    const response = await fetch(`http://localhost:8080/api/players/search?${params}`);
+    const response = await fetch(`/api/players/search?${params}`);
 
     if (!response.ok) {
       throw new Error("선수 검색 API 요청 실패");
@@ -56,7 +56,7 @@ const search = async (nextPage = 0) => {
 
 const openDetail = async (player) => {
   try {
-    const response = await fetch(`http://localhost:8080/api/players/${player.cid}`);
+    const response = await fetch(`/api/players/${player.cid}`);
     if (!response.ok) throw new Error();
     selectedPlayer.value = await response.json();
   } catch {

@@ -13,6 +13,8 @@ dist
 dist-ssr
 coverage
 *.local
+__pycache__/
+*.py[cod]
 
 # Editor directories and files
 .vscode/*
@@ -37,3 +39,8 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+# FC Mobile collection snapshots contain large, reproducible upstream responses.
+/data/fcmobile/snapshots/
+# Downloaded FC Mobile image binaries and generated asset manifests are local data.
+/data/fcmobile/assets/
